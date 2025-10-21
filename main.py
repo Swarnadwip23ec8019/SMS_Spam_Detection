@@ -7,57 +7,57 @@ from nltk.stem.porter import PorterStemmer
 from sklearn.preprocessing import LabelEncoder
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, confusion_matrix
+from nltk.tokenize import RegexpTokenizer
 
-# Download NLTK dependencies
-nltk.download('punkt', quiet=True)
+# -------------------- Setup --------------------
+# Initialize stemmer and tokenizer
+ps = PorterStemmer()
+tokenizer = RegexpTokenizer(r'\w+')
+
+# Download stopwords
 nltk.download('stopwords', quiet=True)
 
 # Load trained model and vectorizer
 tfidf = pickle.load(open('vectorizer.pkl', 'rb'))
 model = pickle.load(open('model.pkl', 'rb'))
 
-# Initialize stemmer
-ps = PorterStemmer()
-
-# Function to preprocess input text
+# -------------------- Functions --------------------
 def transform_text(text):
     text = text.lower()
-    text = nltk.word_tokenize(text)
-    y = [i for i in text if i.isalnum()]
-    text = y[:]
-    y.clear()
-    y = [i for i in text if i not in stopwords.words('english') and i not in string.punctuation]
-    text = y[:]
-    y.clear()
-    y = [ps.stem(i) for i in text]
-    return ' '.join(y)
+    tokens = tokenizer.tokenize(text)  # regex tokenizer
+    tokens = [t for t in tokens if t not in stopwords.words('english')]
+    tokens = [ps.stem(t) for t in tokens]
+    return ' '.join(tokens)
 
-# Streamlit Sidebar Navigation
+# -------------------- Streamlit App --------------------
 st.set_page_config(page_title='Spam Mail Detection', page_icon='📧', layout='wide')
 pages = ['Home', 'Spam Mail Detection', 'Evaluation Metrics', 'About']
 selected_page = st.sidebar.selectbox('Navigation', pages)
 
-# ---------------------- Home Page ----------------------
+# -------------------- Home Page --------------------
 if selected_page == 'Home':
     st.title('📧 Spam Mail Detection App')
-    st.write("This app helps detect whether an email is **Spam** or **Ham**.")
+    st.write("This app detects whether an email is **Spam** or **Ham**.")
     st.write("Use the sidebar to navigate between pages: Spam Detection, Evaluation Metrics, and About.")
 
-# ---------------------- Spam Mail Detection Page ----------------------
+# -------------------- Spam Mail Detection --------------------
 elif selected_page == 'Spam Mail Detection':
     st.title('📨 Spam Mail Detection')
     st.write('Enter the email text below or upload a .txt file to check if it is Spam or Ham.')
 
-    # Option 1: Text input
+    # Text input
     user_input = st.text_area('Email Content')
 
-    # Option 2: File upload
+    # File upload
     uploaded_file = st.file_uploader("Or upload a .txt file", type=["txt"])
     file_content = None
     if uploaded_file is not None:
-        file_content = uploaded_file.read().decode("utf-8")
+        try:
+            file_content = uploaded_file.read().decode("utf-8")
+        except:
+            st.error("Unable to read the uploaded file. Make sure it is a valid .txt file.")
 
-    # Use either text area input or uploaded file content
+    # Use uploaded file if available, else use text area input
     input_text = file_content if file_content else user_input
 
     if st.button('Predict'):
@@ -74,10 +74,10 @@ elif selected_page == 'Spam Mail Detection':
             else:
                 st.success(f'✅ Ham Email! Probability: {prediction_prob:.2f}' if prediction_prob else '✅ Ham Email!')
 
-# ---------------------- Evaluation Metrics Page ----------------------
+# -------------------- Evaluation Metrics --------------------
 elif selected_page == 'Evaluation Metrics':
     st.title('📊 Model Evaluation Metrics')
-    st.write('View performance metrics of the trained spam detection model.')
+    st.write('Performance metrics of the trained spam detection model.')
 
     # Load dataset for evaluation
     df = pd.read_csv('spam.csv', encoding='latin1')
@@ -104,7 +104,7 @@ elif selected_page == 'Evaluation Metrics':
     st.subheader('Class Distribution')
     st.bar_chart(df['target'].value_counts())
 
-# ---------------------- About Page ----------------------
+# -------------------- About --------------------
 elif selected_page == 'About':
     st.title('ℹ️ About')
     st.write('This Spam Mail Detection app is built using:')
@@ -116,4 +116,4 @@ elif selected_page == 'About':
 - TF-IDF Vectorization
 - Multinomial Naive Bayes Model
 """)
-    st.write('The app provides a user-friendly interface to check emails for spam and displays evaluation metrics.')
+    st.write('It allows text input or .txt file upload for spam detection and shows evaluation metrics.')
