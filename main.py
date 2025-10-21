@@ -9,8 +9,8 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, confusion_matrix
 
 # Download NLTK dependencies
-nltk.download('punkt')
-nltk.download('stopwords')
+nltk.download('punkt', quiet=True)
+nltk.download('stopwords', quiet=True)
 
 # Load trained model and vectorizer
 tfidf = pickle.load(open('vectorizer.pkl', 'rb'))
