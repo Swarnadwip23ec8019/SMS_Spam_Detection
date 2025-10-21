@@ -1,95 +1,119 @@
 import streamlit as st
+import pickle
+import string
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+from sklearn.preprocessing import LabelEncoder
 import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
+from sklearn.metrics import accuracy_score, precision_score, confusion_matrix
 
-# Streamlit Page Config
-st.set_page_config(page_title="Spam Mail Detection", page_icon="📧", layout="wide")
+# Download NLTK dependencies
+nltk.download('punkt')
+nltk.download('stopwords')
 
-st.title("📨 Spam Mail Detection App (Machine Learning)")
-st.write("This app trains a Logistic Regression model to classify emails as **Spam** or **Ham (Not Spam)**.")
+# Load trained model and vectorizer
+tfidf = pickle.load(open('vectorizer.pkl', 'rb'))
+model = pickle.load(open('model.pkl', 'rb'))
 
-# Sidebar
-st.sidebar.header("📂 Upload Data")
-uploaded_file = st.sidebar.file_uploader("Upload your CSV file (must contain 'Category' and 'Message' columns):", type=['csv'])
+# Initialize stemmer
+ps = PorterStemmer()
 
-# Load default dataset if none uploaded
-if uploaded_file is not None:
-    mail_data = pd.read_csv(uploaded_file, encoding='ISO-8859-1')
-else:
-    st.info("Using default dataset: `mail_data.csv`")
-    mail_data = pd.read_csv('mail_data.csv', encoding='ISO-8859-1')
+# Function to preprocess input text
+def transform_text(text):
+    text = text.lower()
+    text = nltk.word_tokenize(text)
+    y = [i for i in text if i.isalnum()]
+    text = y[:]
+    y.clear()
+    y = [i for i in text if i not in stopwords.words('english') and i not in string.punctuation]
+    text = y[:]
+    y.clear()
+    y = [ps.stem(i) for i in text]
+    return ' '.join(y)
 
-# Replace null values
-mail_data = mail_data.where((pd.notnull(mail_data)), '')
+# Streamlit Sidebar Navigation
+st.set_page_config(page_title='Spam Mail Detection', page_icon='📧', layout='wide')
+pages = ['Home', 'Spam Mail Detection', 'Evaluation Metrics', 'About']
+selected_page = st.sidebar.selectbox('Navigation', pages)
 
-# Label encoding
-mail_data.loc[mail_data['Category'] == 'spam', 'Category'] = 0
-mail_data.loc[mail_data['Category'] == 'ham', 'Category'] = 1
+# ---------------------- Home Page ----------------------
+if selected_page == 'Home':
+    st.title('📧 Spam Mail Detection App')
+    st.write("This app helps detect whether an email is **Spam** or **Ham**.")
+    st.write("Use the sidebar to navigate between pages: Spam Detection, Evaluation Metrics, and About.")
 
-X = mail_data['Message']
-Y = mail_data['Category'].astype('int')
+# ---------------------- Spam Mail Detection Page ----------------------
+elif selected_page == 'Spam Mail Detection':
+    st.title('📨 Spam Mail Detection')
+    st.write('Enter the email text below or upload a .txt file to check if it is Spam or Ham.')
 
-# Split the dataset
-X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=3)
+    # Option 1: Text input
+    user_input = st.text_area('Email Content')
 
-# TF-IDF Feature Extraction
-feature_extraction = TfidfVectorizer(min_df=1, stop_words='english', lowercase=True)
-X_train_features = feature_extraction.fit_transform(X_train)
-X_test_features = feature_extraction.transform(X_test)
+    # Option 2: File upload
+    uploaded_file = st.file_uploader("Or upload a .txt file", type=["txt"])
+    file_content = None
+    if uploaded_file is not None:
+        file_content = uploaded_file.read().decode("utf-8")
 
-# Train Model
-model = LogisticRegression()
-model.fit(X_train_features, Y_train)
+    # Use either text area input or uploaded file content
+    input_text = file_content if file_content else user_input
 
-# Evaluate Model
-Y_test_pred = model.predict(X_test_features)
-
-accuracy = accuracy_score(Y_test, Y_test_pred)
-precision = precision_score(Y_test, Y_test_pred)
-recall = recall_score(Y_test, Y_test_pred)
-f1 = f1_score(Y_test, Y_test_pred)
-
-# Display Metrics
-st.subheader("📊 Model Performance Metrics")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Accuracy", f"{accuracy*100:.2f}%")
-col2.metric("Precision", f"{precision*100:.2f}%")
-col3.metric("Recall", f"{recall*100:.2f}%")
-col4.metric("F1 Score", f"{f1*100:.2f}%")
-
-# Confusion Matrix
-st.subheader("📉 Confusion Matrix")
-cm = confusion_matrix(Y_test, Y_test_pred)
-fig, ax = plt.subplots(figsize=(5,4))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Spam','Ham'], yticklabels=['Spam','Ham'], ax=ax)
-st.pyplot(fig)
-
-# Classification Report
-st.subheader("📋 Classification Report")
-st.text(classification_report(Y_test, Y_test_pred, target_names=['Spam', 'Ham']))
-
-# Spam Prediction Section
-st.subheader("✉️ Try Out the Model")
-input_mail = st.text_area("Enter an email/message text below:")
-
-if st.button("Predict"):
-    if input_mail.strip() == "":
-        st.warning("Please enter a message before predicting.")
-    else:
-        # Transform input text
-        input_data_features = feature_extraction.transform([input_mail])
-        prediction = model.predict(input_data_features)[0]
-
-        if prediction == 1:
-            st.success("✅ This is a **HAM** message (Not Spam).")
+    if st.button('Predict'):
+        if not input_text or input_text.strip() == '':
+            st.warning('Please enter some email text or upload a .txt file.')
         else:
-            st.error("🚫 This is a **SPAM** message!")
+            transformed_input = transform_text(input_text)
+            vectorized_input = tfidf.transform([transformed_input]).toarray()
+            prediction = model.predict(vectorized_input)[0]
+            prediction_prob = model.predict_proba(vectorized_input)[0][prediction] if hasattr(model, 'predict_proba') else None
 
-st.markdown("---")
-st.caption("Developed with ❤️ using Streamlit and Scikit-learn.")
+            if prediction == 1:
+                st.error(f'🚨 Spam Email! Probability: {prediction_prob:.2f}' if prediction_prob else '🚨 Spam Email!')
+            else:
+                st.success(f'✅ Ham Email! Probability: {prediction_prob:.2f}' if prediction_prob else '✅ Ham Email!')
+
+# ---------------------- Evaluation Metrics Page ----------------------
+elif selected_page == 'Evaluation Metrics':
+    st.title('📊 Model Evaluation Metrics')
+    st.write('View performance metrics of the trained spam detection model.')
+
+    # Load dataset for evaluation
+    df = pd.read_csv('spam.csv', encoding='latin1')
+    df.drop(columns=['Unnamed: 2','Unnamed: 3','Unnamed: 4'], inplace=True)
+    df.rename(columns={'v1':'target','v2':'text'}, inplace=True)
+    df.drop_duplicates(inplace=True)
+    encoder = LabelEncoder()
+    df['target'] = encoder.fit_transform(df['target'])
+    df['transformed_text'] = df['text'].apply(transform_text)
+    X_eval = tfidf.transform(df['transformed_text']).toarray()
+    y_eval = df['target'].values
+    y_pred_eval = model.predict(X_eval)
+
+    st.subheader('Accuracy')
+    st.write(accuracy_score(y_eval, y_pred_eval))
+
+    st.subheader('Precision')
+    st.write(precision_score(y_eval, y_pred_eval))
+
+    st.subheader('Confusion Matrix')
+    cm = confusion_matrix(y_eval, y_pred_eval)
+    st.write(cm)
+
+    st.subheader('Class Distribution')
+    st.bar_chart(df['target'].value_counts())
+
+# ---------------------- About Page ----------------------
+elif selected_page == 'About':
+    st.title('ℹ️ About')
+    st.write('This Spam Mail Detection app is built using:')
+    st.write("""
+- Python
+- Streamlit
+- scikit-learn
+- NLTK
+- TF-IDF Vectorization
+- Multinomial Naive Bayes Model
+""")
+    st.write('The app provides a user-friendly interface to check emails for spam and displays evaluation metrics.')
